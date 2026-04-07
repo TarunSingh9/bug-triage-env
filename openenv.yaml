@@ -78,10 +78,15 @@ endpoints:
   tasks: /tasks
   health: /health
 
+server:
+  entry_point: app:main
+  app_file: app.py
+  port: 7860
+
 docker:
   base_image: python:3.11-slim
   port: 7860
 
 huggingface:
-  sdk: gradio
+  sdk: docker
   app_file: app.py
