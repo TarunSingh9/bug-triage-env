@@ -29,9 +29,9 @@ from openai import OpenAI
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.groq.com/openai/v1")
+MODEL_NAME   = os.environ.get("MODEL_NAME",   "llama3-8b-8192")
+HF_TOKEN     = os.environ.get("HF_TOKEN",     "")
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 
 # Timeout for environment requests
@@ -95,20 +95,22 @@ class EnvClient:
         self.base_url = base_url.rstrip("/")
         self._wait_for_env()
 
-    def _wait_for_env(self, max_retries: int = 5, delay: float = 3.0):
+    def _wait_for_env(self, max_retries: int = 10, delay: float = 5.0):
         """Wait for the environment to be ready."""
         for i in range(max_retries):
             try:
-                r = requests.get(f"{self.base_url}/health", timeout=10)
+                r = requests.get(f"{self.base_url}/health", timeout=15)
                 if r.status_code == 200:
                     print(f"✓ Environment ready at {self.base_url}")
                     return
-            except Exception:
+            except Exception as e:
                 pass
-            if i < max_retries - 1:
-                print(f"  Waiting for environment... ({i+1}/{max_retries})")
-                time.sleep(delay)
-        print(f"⚠ Could not connect to environment at {self.base_url}, proceeding anyway...")
+            print(f"  Waiting for environment... ({i+1}/{max_retries})")
+            time.sleep(delay)
+        raise RuntimeError(
+            f"Environment at {self.base_url} did not become ready after "
+            f"{max_retries} retries. Check that ENV_BASE_URL is set correctly."
+        )
 
     def reset(self, task_id: str) -> Dict[str, Any]:
         r = requests.post(
@@ -198,8 +200,7 @@ def run_agent_step(
     raw = response.choices[0].message.content.strip()
     conversation.append({"role": "assistant", "content": raw})
 
-    # Parse JSON action
-    # Strip markdown code blocks if present
+    # Parse JSON action — strip markdown code blocks if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -313,14 +314,21 @@ def main():
     args = parser.parse_args()
 
     print("Bug Triage OpenEnv — Baseline Inference")
-    print(f"Model: {MODEL_NAME}")
-    print(f"API Base: {API_BASE_URL}")
+    print(f"Model:       {MODEL_NAME}")
+    print(f"API Base:    {API_BASE_URL}")
     print(f"Environment: {args.env_url or ENV_BASE_URL}")
 
-    if not HF_TOKEN and not os.environ.get("OPENAI_API_KEY"):
-        print("⚠ WARNING: No API key found. Set HF_TOKEN or OPENAI_API_KEY.")
+    # ── Credential validation ──────────────────────────────────────────────────
+    if not HF_TOKEN:
+        print("✗ FATAL: HF_TOKEN is not set. Add your Groq API key as a secret named HF_TOKEN.")
+        sys.exit(1)
 
-    # Init clients
+    if not ENV_BASE_URL or ENV_BASE_URL == "http://localhost:7860":
+        print("⚠ WARNING: ENV_BASE_URL is not set or still pointing to localhost.")
+        print("  Set ENV_BASE_URL to your HuggingFace Space URL, e.g.:")
+        print("  https://tarun324-bug-triage-env.hf.space")
+
+    # ── Init clients ───────────────────────────────────────────────────────────
     client = get_client()
     env_url = args.env_url or ENV_BASE_URL
     env_client = EnvClient(base_url=env_url)
@@ -347,7 +355,7 @@ def main():
 
     elapsed = time.time() - start_time
 
-    # Summary
+    # ── Summary ────────────────────────────────────────────────────────────────
     print(f"\n{'='*60}")
     print("BASELINE RESULTS SUMMARY")
     print(f"{'='*60}")
@@ -362,7 +370,7 @@ def main():
     print(f"\n  Average score: {avg:.3f}")
     print(f"  Total time:    {elapsed:.1f}s")
 
-    # Save results
+    # ── Save results ───────────────────────────────────────────────────────────
     output = {
         "model": MODEL_NAME,
         "api_base": API_BASE_URL,
@@ -383,5 +391,12 @@ def main():
     return 0 if avg >= 0.5 else 1
 
 
+# ─── Entry point ──────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"\nFATAL ERROR: {type(e).__name__}: {e}", flush=True)
+        traceback.print_exc()
+        sys.exit(1)
