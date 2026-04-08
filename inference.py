@@ -28,13 +28,13 @@ from typing import Any, Dict, List
 
 import requests
 
-# --- Configuration ------------------------------------------------------------
+# ─── Configuration ────────────────────────────────────────────────────────────
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 ENV_TIMEOUT  = 60
 TASKS        = ["easy_triage", "medium_investigation", "hard_triage"]
 
-# --- Rule-based Triage Agent --------------------------------------------------
+# ─── Rule-based Triage Agent ──────────────────────────────────────────────────
 
 SEVERITY_KEYWORDS = {
     "critical": [
@@ -238,7 +238,7 @@ def plan_actions(obs: Dict[str, Any]) -> List[Dict[str, Any]]:
     return actions
 
 
-# --- Environment Client -------------------------------------------------------
+# ─── Environment Client ───────────────────────────────────────────────────────
 
 class EnvClient:
     def __init__(self, base_url: str):
@@ -251,7 +251,7 @@ class EnvClient:
             try:
                 r = requests.get(f"{self.base_url}/health", timeout=15)
                 if r.status_code == 200:
-                    print("  ? Environment ready")
+                    print("  ✓ Environment ready")
                     return
             except Exception:
                 pass
@@ -281,7 +281,7 @@ class EnvClient:
         return r.json()
 
 
-# --- Episode Runner -----------------------------------------------------------
+# ─── Episode Runner ───────────────────────────────────────────────────────────
 
 def run_episode(
     env_client: EnvClient,
@@ -295,7 +295,7 @@ def run_episode(
     try:
         obs = env_client.reset(task_id)
     except Exception as e:
-        print(f"  ? Reset failed: {e}")
+        print(f"  ✗ Reset failed: {e}")
         return {
             "task_id": task_id,
             "error": f"Reset failed: {e}",
@@ -325,11 +325,11 @@ def run_episode(
             if verbose:
                 print(f"  Step {step}: {action.get('action_type')}", end="")
                 if action.get("severity"):
-                    print(f" ? {action['severity']}", end="")
+                    print(f" → {action['severity']}", end="")
                 if action.get("team"):
-                    print(f" ? {action['team']}", end="")
+                    print(f" → {action['team']}", end="")
                 if action.get("labels"):
-                    print(f" ? {action['labels']}", end="")
+                    print(f" → {action['labels']}", end="")
 
             result       = env_client.step(task_id, action)
             reward_val   = result["reward"]["value"]
@@ -352,7 +352,7 @@ def run_episode(
                 print(f"\n     ERROR: {e}")
             continue
 
-    print(f"\n  ? Done — {step} steps, reward: {total_reward:.3f}")
+    print(f"\n  ✓ Done — {step} steps, reward: {total_reward:.3f}")
     if terminal_score is not None:
         print(f"  Final score: {terminal_score:.3f}")
         for k, v in grade_breakdown.items():
@@ -371,7 +371,7 @@ def run_episode(
     }
 
 
-# --- Main ---------------------------------------------------------------------
+# ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Bug Triage OpenEnv Inference")
@@ -396,7 +396,7 @@ def main():
             result = run_episode(env_client, task_id, verbose=args.verbose)
             all_results.append(result)
         except Exception as e:
-            print(f"\n  ? Task {task_id} crashed: {e}")
+            print(f"\n  ✗ Task {task_id} crashed: {e}")
             traceback.print_exc()
             all_results.append({
                 "task_id":        task_id,
@@ -415,7 +415,7 @@ def main():
     for r in all_results:
         score  = r.get("terminal_score") or 0.0
         scores.append(score)
-        status = "?" if r.get("success") else "?"
+        status = "✓" if r.get("success") else "✗"
         print(f"  {status} {r['task_id']:<30} score={score:.3f}")
 
     avg = sum(scores) / len(scores) if scores else 0.0
@@ -440,7 +440,7 @@ def main():
     return 0 if avg >= 0.5 else 1
 
 
-# --- Entry point --------------------------------------------------------------
+# ─── Entry point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     try:
